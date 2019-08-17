@@ -1,0 +1,47 @@
+<seelog type="asynctimer" asyncinterval="5000000" minlevel="debug" maxlevel="error">
+    <exceptions>
+        <exception funcpattern="*main.test*Something*" minlevel="info"/>
+        <exception filepattern="*main.go" minlevel="error"/>
+    </exceptions>
+    <outputs formatid="main">
+        <console/>
+
+        <splitter formatid="format1">
+            <file path="log.log"/>
+            <file path="log2.log"/>
+        </splitter>
+        <splitter formatid="format2">
+            <file path="log3.log"/>
+            <file path="log4.log"/>
+        </splitter>
+
+        <rollingfile formatid="someformat" type="size" filename="./log/roll.log" maxsize="100" maxrolls="5"/>
+
+        <buffered formatid="testlevels" size="10000" flushperiod="1000">
+            <file path="./log/bufFileFlush.log"/>
+        </buffered>
+
+        <filter levels="error">
+            <file path="./log/error.log"/>
+            <smtp senderaddress="noreply-notification-service@none.org"
+                  sendername="Automatic notification service"
+                  hostname="smtp.263.net"
+                  hostport="25"
+                  username="ceshi1@wondersoft.cn"
+                  password="pengwenming123">
+                <recipient address="daixiaobo@wondersoft.cn"/>
+               <!-- <recipient address="hans-meier@none.com"/>-->
+            </smtp>
+            <conn net="tcp4" addr="server.address:5514" tls="true" insecureskipverify="true"/>
+        </filter>
+
+    </outputs>
+    <formats>
+        <format id="main" format="%Date(2006 Jan 02/3:04:05.000000000 PM MST) [%Level] %Msg%n"/>
+        <format id="someformat" format="%Ns [%Level] %Msg%n"/>
+        <format id="testlevels" format="%Level %Lev %LEVEL %LEV %l %Msg%n"/>
+        <format id="usetags" format="&lt;msg&gt;%Msg&lt;/time&gt;"/>
+        <format id="format1" format="%Date/%Time [%LEV] %Msg%n"/>
+        <format id="format2" format="%File %FullPath %RelFile %Msg%n"/>
+    </formats>
+</seelog>

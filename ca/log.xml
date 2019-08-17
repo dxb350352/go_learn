@@ -1,0 +1,20 @@
+<seelog type="asynctimer" asyncinterval="5000000" minlevel="trace" maxlevel="error">
+    <exceptions>
+        <exception funcpattern="*main.test*Something*" minlevel="info" />
+        <exception filepattern="*main.go" minlevel="error" />
+    </exceptions>
+    <outputs formatid="main">
+        <buffered size="10000" flushperiod="1000">
+            <rollingfile type="date" filename="./log/ws.log" datepattern="2006.01.02" maxrolls="30" />
+        </buffered>
+    </outputs>
+    <formats>
+        <format id="main1" format="%Date(2006 Jan 02/3:04:05.000000000 PM MST) [%Level] %Msg%n" />
+        <format id="someformat" format="%Ns [%Level] %Msg%n" />
+        <format id="testlevels" format="%Level %Lev %LEVEL %LEV %l %Msg%n" />
+        <format id="usetags" format="&lt;msg&gt;%Msg&lt;/time&gt;" />
+        <format id="format1" format="%Date/%Time [%LEV] %Msg%n" />
+        <format id="format2" format="%File %FullPath %RelFile %Msg%n" />
+        <format id="main" format="%Date/%Time [%LEV] %FullPath:%Line  %Msg%n" />
+    </formats>
+</seelog>

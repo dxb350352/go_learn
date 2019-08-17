@@ -11,7 +11,7 @@ import (
 )
 
 func main() {
-	log.SetFlags(log.LstdFlags | log.Lshortfile)
+	log.SetFlags(log.LstdFlags|log.Lshortfile)
 	l, err := net.Listen("tcp", ":8081")
 	if err != nil {
 		log.Panic(err)
@@ -32,7 +32,7 @@ func handleClientRequest(client net.Conn) {
 		return
 	}
 	defer client.Close()
-	//没读完！！！！学习下思想
+
 	var b [1024]byte
 	n, err := client.Read(b[:])
 	if err != nil {

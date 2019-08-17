@@ -1,0 +1,298 @@
+package controllers
+
+import (
+	"errors"
+	"fmt"
+	"github.com/BurntSushi/toml"
+	"github.com/revel/revel"
+	"github.com/robfig/config"
+	"github.com/sas/modules/config/app/models"
+	"github.com/sas/utils"
+	"os"
+	"time"
+	"strings"
+)
+
+type Applications struct {
+	*revel.Controller
+}
+//图片路径
+const APP_ICON_PATH = "/public/appicons/"
+//插件路径
+const APP_PATH = "/plugins/"
+//插件配置文件路径
+const APP_CONFIG = "/config.conf"
+
+func (c Applications) Applications() revel.Result {
+	return c.Render()
+}
+
+func (c Applications) validate4save(app *models.Application) error {
+	if utils.IsBlankString(app.Name) {
+		return errors.New("应用名称不能为空")
+	}
+	if utils.IsBlankString(app.Version) {
+		return errors.New("应用版本号不能为空")
+	}
+	if utils.IsBlankString(app.Url) {
+		return errors.New("用户地址不能为空")
+	}
+	if !app.IsUniqueName(app.Name, app.Id) {
+		return errors.New("应用名称重复")
+	}
+	//上传图标
+	err := c.uploadIcon(app)
+	if err != nil {
+		return err
+	}
+	//上传插件压缩包
+//	err = c.uploadApp(app)
+//	if err != nil {
+//		return err
+//	}
+	return nil
+}
+
+func (c Applications) uploadIcon(app *models.Application) error {
+	file, handler, err := c.Request.FormFile("icon_file")
+	if err != nil {
+		models.Logger.Errorf("err:%# v", err)
+		return err
+	}
+	defer file.Close()
+	app.Icon = APP_ICON_PATH + app.Name + "_" + handler.Filename
+	path := revel.BasePath + app.Icon
+	return utils.Multipart2Path(file, path)
+}
+
+func (c Applications) uploadApp(app *models.Application) error {
+	file, handler, err := c.Request.FormFile("app_file")
+	if err != nil {
+		models.Logger.Errorf("err:%# v", err)
+		return err
+	}
+	defer file.Close()
+	//上传文件
+	filePath := revel.BasePath + APP_PATH + app.Name + "_" + handler.Filename
+	path := revel.BasePath + APP_PATH
+	err = utils.Multipart2Path(file, filePath)
+	if err != nil {
+		models.Logger.Errorf("err:%# v", err)
+		return err
+	}
+	//解压
+	err = utils.DeCompressTarGzipByCommand(filePath, path)
+	if err != nil {
+		models.Logger.Errorf("err:%# v", err)
+		return err
+	}
+	//移动、配置
+	var appconfig models.AppConfig
+	_, err = toml.DecodeFile(path + handler.Filename[:strings.Index(handler.Filename, ".")] + APP_CONFIG, &appconfig)
+	if err != nil {
+		models.Logger.Errorf("err:%# v", err)
+		return err
+	}
+	app.ModulePath = appconfig.ModulePath
+	return nil
+}
+
+//修改app.conf 模块内容
+func changeAppConf(app models.Application) error {
+	appconf, err := config.ReadDefault(revel.BasePath + "/conf/app.conf")
+	if err != nil {
+		models.Logger.Errorf("err:%# v", err)
+		return err
+	}
+	if app.Enable == 1 {
+		appconf.AddOption(config.DEFAULT_SECTION, "module." + app.Name, "github.com/sas" + APP_PATH + app.ModulePath)
+	} else {
+		appconf.RemoveOption(config.DEFAULT_SECTION, "module." + app.Name)
+	}
+	err = appconf.WriteFile(revel.BasePath + "/conf/app.conf", 0644, fmt.Sprintln("Modiffied at:", time.Now()))
+	if err != nil {
+		models.Logger.Errorf("err:%# v", err)
+		return err
+	}
+	return nil
+}
+
+func (c Applications) Create(app models.Application) revel.Result {
+	err := c.validate4save(&app)
+	if err != nil {
+		models.Logger.Errorf("err:%# v", err)
+		return utils.GetWSErrorResult(c.Controller, err.Error())
+	}
+	err = app.Create()
+	if err != nil {
+		models.Logger.Errorf("err:%# v", err)
+		return utils.GetWSErrorResult(c.Controller, err.Error())
+	}
+	//修改app.conf
+	err = changeAppConf(app)
+	if err != nil {
+		models.Logger.Errorf("err:%# v", err)
+		return utils.GetWSErrorResult(c.Controller, err.Error())
+	}
+	return utils.GetWSSuccessResult(c.Controller, "OK")
+}
+
+func (c Applications) Delete(id int64) revel.Result {
+	var app *models.Application
+	app, err := app.ReadOne(id)
+	if err != nil {
+		models.Logger.Errorf("err:%# v", err)
+		return utils.GetWSErrorResult(c.Controller, err.Error())
+	}
+	//删除图标
+	if app.Icon != "" {
+		os.Remove(revel.BasePath + app.Icon)
+	}
+	//修改app.conf
+	err = changeAppConf(*app)
+	if err != nil {
+		models.Logger.Errorf("err:%# v", err)
+		return utils.GetWSErrorResult(c.Controller, err.Error())
+	}
+	//删除
+	err = app.Delete(id)
+	if err != nil {
+		models.Logger.Errorf("err:%# v", err)
+		return utils.GetWSErrorResult(c.Controller, err.Error())
+	}
+	return utils.GetWSSuccessResult(c.Controller, "OK")
+}
+
+func (c Applications) Update(app models.Application) revel.Result {
+	err := c.validate4save(&app)
+	if err != nil {
+		models.Logger.Errorf("err:%# v", err)
+		return utils.GetWSErrorResult(c.Controller, err.Error())
+	}
+	err = app.Update()
+	if err != nil {
+		models.Logger.Errorf("err:%# v", err)
+		return utils.GetWSErrorResult(c.Controller, err.Error())
+	}
+	//修改app.conf
+	err = changeAppConf(app)
+	if err != nil {
+		models.Logger.Errorf("err:%# v", err)
+		return utils.GetWSErrorResult(c.Controller, err.Error())
+	}
+	return utils.GetWSSuccessResult(c.Controller, "OK")
+}
+
+func (c Applications) Read(id int64) revel.Result {
+	var app *models.Application
+	app, err := app.ReadOne(id)
+	if err != nil {
+		models.Logger.Errorf("err:%# v", err)
+		return utils.GetWSErrorResult(c.Controller, err.Error())
+	}
+	return utils.GetWSSuccessResult(c.Controller, app)
+}
+
+func (c Applications) List(limit, skip int) revel.Result {
+	var dao models.Application
+	total, err := dao.Count()
+	if err != nil {
+		models.Logger.Errorf("err:%# v", err)
+		return utils.GetWSErrorResult(c.Controller, err.Error())
+	}
+	dbs, err := dao.List(limit, skip)
+	if err != nil {
+		models.Logger.Errorf("err:%# v", err)
+		return utils.GetWSErrorResult(c.Controller, err.Error())
+	}
+	return utils.GetWSSuccessResult(c.Controller, utils.PageBean{Total: total, Data: dbs})
+}
+
+func (c Applications) Tree() revel.Result {
+	var app models.Application
+	tree, err := app.Tree()
+	if err != nil {
+		models.Logger.Errorf("err:%# v", err)
+		return utils.GetWSErrorResult(c.Controller, err.Error())
+	}
+	return utils.GetWSSuccessResult(c.Controller, tree)
+}
+
+//用户添加一个应用
+func (c Applications) UserCreate(id int64) revel.Result {
+	userid := utils.ParseInt64(c.Session["userId"])
+	if userid <= 0 {
+		return utils.GetWSErrorResult(c.Controller, "获取用户ID失败，请登录")
+	}
+	if id <= 0 {
+		return utils.GetWSErrorResult(c.Controller, "获取应用ID失败")
+	}
+	ua := models.UserApp{UserId: userid, AppId: id}
+	err := ua.Create()
+	if err != nil {
+		models.Logger.Errorf("err:%# v", err)
+		return utils.GetWSErrorResult(c.Controller, err.Error())
+	}
+	//app下载次数加一
+	var app *models.Application
+	app, err = app.ReadOne(id)
+	if err != nil {
+		models.Logger.Errorf("err:%# v", err)
+		return utils.GetWSErrorResult(c.Controller, err.Error())
+	}
+	app.DownloadNum++
+	_, err = models.Engine.Id(id).Update(app)
+	if err != nil {
+		models.Logger.Errorf("err:%# v", err)
+		return utils.GetWSErrorResult(c.Controller, err.Error())
+	}
+
+	return utils.GetWSSuccessResult(c.Controller, "Ok")
+}
+
+//删除用户应用
+func (c Applications) UserDelete(id int64) revel.Result {
+	userid := utils.ParseInt64(c.Session["userId"])
+	if userid <= 0 {
+		return utils.GetWSErrorResult(c.Controller, "获取用户ID失败，请登录")
+	}
+	if id <= 0 {
+		return utils.GetWSErrorResult(c.Controller, "获取应用ID失败")
+	}
+	var ua models.UserApp
+	err := ua.Delete(userid, id)
+	if err != nil {
+		models.Logger.Errorf("err:%# v", err)
+		return utils.GetWSErrorResult(c.Controller, err.Error())
+	}
+	return utils.GetWSSuccessResult(c.Controller, "Ok")
+}
+
+//用户应用列表
+func (c Applications) UserList(limit, skip int) revel.Result {
+	userid := utils.ParseInt64(c.Session["userId"])
+	var ua models.UserApp
+	uapps, err := ua.List(limit, skip, userid)
+	if err != nil {
+		models.Logger.Errorf("err:%# v", err)
+		utils.GetWSErrorResult(c.Controller, err.Error())
+	}
+	return utils.GetWSSuccessResult(c.Controller, uapps)
+}
+
+//用户添加应用列表（区分哪些已经添加过了）
+func (c Applications) UserManageList(limit, skip int) revel.Result {
+	userid := utils.ParseInt64(c.Session["userId"])
+	var ua models.UserApp
+	total, err := ua.UserManageListCount()
+	if err != nil {
+		models.Logger.Errorf("err:%# v", err)
+		utils.GetWSErrorResult(c.Controller, err.Error())
+	}
+	uapps, err := ua.UserManageList(limit, skip, userid)
+	if err != nil {
+		models.Logger.Errorf("err:%# v", err)
+		utils.GetWSErrorResult(c.Controller, err.Error())
+	}
+	return utils.GetWSSuccessResult(c.Controller, utils.PageBean{Total: total, Data: uapps})
+}
